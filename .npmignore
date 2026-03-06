@@ -1,0 +1,8 @@
+src/
+tests/
+tsconfig*.json
+*.test.ts
+*.spec.ts
+.eslintrc*
+.prettierrc*
+jest.config.*
