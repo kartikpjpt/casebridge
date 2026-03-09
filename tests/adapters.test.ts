@@ -74,6 +74,81 @@ describe('createCaseBridgeFetch', () => {
     const text = await fetch('/page').then(r => r.text());
     expect(text).toBe('<html></html>');
   });
+
+  it('does not convert request body when requestCase is camel', async () => {
+    let capturedBody: unknown;
+    const baseFetch: typeof globalThis.fetch = async (_input, init) => {
+      capturedBody = JSON.parse(init?.body as string);
+      return new Response('{}', { headers: { 'content-type': 'application/json' } });
+    };
+
+    const fetch = createCaseBridgeFetch({ fetch: baseFetch, requestCase: 'camel' });
+    await fetch('/api/user', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ firstName: 'Jane', profileId: 42 }),
+    });
+
+    expect(capturedBody).toEqual({ firstName: 'Jane', profileId: 42 });
+  });
+
+  it('does not convert response when responseCase is snake', async () => {
+    const fetch = createCaseBridgeFetch({
+      fetch: mockFetch({ first_name: 'Jane', profile_id: 1 }),
+      responseCase: 'snake',
+    });
+    const data = await fetch('/api/user').then(r => r.json());
+    expect(data).toEqual({ first_name: 'Jane', profile_id: 1 });
+  });
+
+  it('skips snake request conversion for avoidSnakeRequestConversion urls', async () => {
+    let capturedBody: unknown;
+    const baseFetch: typeof globalThis.fetch = async (_input, init) => {
+      capturedBody = JSON.parse(init?.body as string);
+      return new Response('{}', { headers: { 'content-type': 'application/json' } });
+    };
+
+    const fetch = createCaseBridgeFetch({
+      fetch: baseFetch,
+      avoidSnakeRequestConversion: ['/camel-api'],
+    });
+    await fetch('/camel-api/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ firstName: 'Jane', profileId: 42 }),
+    });
+
+    expect(capturedBody).toEqual({ firstName: 'Jane', profileId: 42 });
+  });
+
+  it('still converts snake request for non-matching avoidSnakeRequestConversion urls', async () => {
+    let capturedBody: unknown;
+    const baseFetch: typeof globalThis.fetch = async (_input, init) => {
+      capturedBody = JSON.parse(init?.body as string);
+      return new Response('{}', { headers: { 'content-type': 'application/json' } });
+    };
+
+    const fetch = createCaseBridgeFetch({
+      fetch: baseFetch,
+      avoidSnakeRequestConversion: ['/camel-api'],
+    });
+    await fetch('/snake-api/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ firstName: 'Jane', profileId: 42 }),
+    });
+
+    expect(capturedBody).toEqual({ first_name: 'Jane', profile_id: 42 });
+  });
+
+  it('skips camel response conversion for avoidCamelResponseConversion urls', async () => {
+    const fetch = createCaseBridgeFetch({
+      fetch: mockFetch({ first_name: 'Jane' }),
+      avoidCamelResponseConversion: ['/legacy-api'],
+    });
+    const data = await fetch('/legacy-api/user').then(r => r.json());
+    expect(data).toEqual({ first_name: 'Jane' });
+  });
 });
 
 // ── Axios adapter ─────────────────────────────────────────────────────────────
@@ -124,5 +199,56 @@ describe('createCaseBridgeAxiosInterceptors', () => {
     const { request } = createCaseBridgeAxiosInterceptors();
     const result = request.onFulfilled({ url: '/api/user' });
     expect(result.data).toBeUndefined();
+  });
+
+  it('does not convert request body when requestCase is camel', () => {
+    const { request } = createCaseBridgeAxiosInterceptors({ requestCase: 'camel' });
+    const result = request.onFulfilled({
+      url: '/api/user',
+      data: { firstName: 'Jane', profileId: 42 },
+    });
+    expect(result.data).toEqual({ firstName: 'Jane', profileId: 42 });
+  });
+
+  it('does not convert response when responseCase is snake', () => {
+    const { response } = createCaseBridgeAxiosInterceptors({ responseCase: 'snake' });
+    const result = response.onFulfilled({
+      data: { first_name: 'Jane', profile_id: 1 },
+      config: { url: '/api/user' },
+    });
+    expect(result.data).toEqual({ first_name: 'Jane', profile_id: 1 });
+  });
+
+  it('skips snake request conversion for avoidSnakeRequestConversion urls', () => {
+    const { request } = createCaseBridgeAxiosInterceptors({
+      avoidSnakeRequestConversion: ['/camel-api'],
+    });
+    const result = request.onFulfilled({
+      url: '/camel-api/users',
+      data: { firstName: 'Jane', profileId: 42 },
+    });
+    expect(result.data).toEqual({ firstName: 'Jane', profileId: 42 });
+  });
+
+  it('still converts snake request for non-matching avoidSnakeRequestConversion urls', () => {
+    const { request } = createCaseBridgeAxiosInterceptors({
+      avoidSnakeRequestConversion: ['/camel-api'],
+    });
+    const result = request.onFulfilled({
+      url: '/snake-api/users',
+      data: { firstName: 'Jane', profileId: 42 },
+    });
+    expect(result.data).toEqual({ first_name: 'Jane', profile_id: 42 });
+  });
+
+  it('skips camel response conversion for avoidCamelResponseConversion urls', () => {
+    const { response } = createCaseBridgeAxiosInterceptors({
+      avoidCamelResponseConversion: ['/legacy-api'],
+    });
+    const result = response.onFulfilled({
+      data: { first_name: 'Jane' },
+      config: { url: '/legacy-api/user' },
+    });
+    expect(result.data).toEqual({ first_name: 'Jane' });
   });
 });

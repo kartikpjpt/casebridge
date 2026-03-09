@@ -1,6 +1,6 @@
 {
   "name": "casebridge",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Bidirectional camelCase ↔ snake_case key transformation for TypeScript/JavaScript — framework-agnostic core with adapters for Angular, Fetch, and Axios.",
   "author": {
     "name": "Kartik"
@@ -43,7 +43,10 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "angular",
+    "fetch",
+    "axios"
   ],
   "scripts": {
     "build": "tsup",

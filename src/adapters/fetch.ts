@@ -20,13 +20,37 @@ import { snakeToCamel, camelToSnake } from '../core/converters';
 
 export interface FetchAdapterConfig {
   /**
-   * URL substrings or RegExp patterns to skip transformation for.
+   * URL substrings or RegExp patterns to skip ALL transformation for.
    */
   skipUrls?: ReadonlyArray<string | RegExp>;
   /**
    * Base fetch implementation to wrap. Defaults to globalThis.fetch.
    */
   fetch?: typeof globalThis.fetch;
+  /**
+   * Default case for outgoing request payloads.
+   * - `'snake'` (default): converts camelCase → snake_case.
+   * - `'camel'`: sends payload as-is (no conversion).
+   */
+  requestCase?: 'snake' | 'camel';
+  /**
+   * Default case for incoming response payloads.
+   * - `'camel'` (default): converts snake_case → camelCase.
+   * - `'snake'`: leaves response payload as-is (no conversion).
+   */
+  responseCase?: 'snake' | 'camel';
+  /**
+   * URL substrings or RegExp patterns for endpoints that accept camelCase
+   * request bodies — snake_case conversion is skipped for these URLs,
+   * regardless of the global `requestCase` setting.
+   */
+  avoidSnakeRequestConversion?: ReadonlyArray<string | RegExp>;
+  /**
+   * URL substrings or RegExp patterns for endpoints that return non-camelCase
+   * responses — camelCase conversion is skipped for these URLs,
+   * regardless of the global `responseCase` setting.
+   */
+  avoidCamelResponseConversion?: ReadonlyArray<string | RegExp>;
 }
 
 function shouldSkip(url: string, patterns: ReadonlyArray<string | RegExp>): boolean {
@@ -51,6 +75,10 @@ function isJsonContentType(headers: HeadersInit | undefined): boolean {
 export function createCaseBridgeFetch(config: FetchAdapterConfig = {}): typeof globalThis.fetch {
   const baseFetch = config.fetch ?? globalThis.fetch;
   const skipPatterns = config.skipUrls ?? [];
+  const requestCase = config.requestCase ?? 'snake';
+  const responseCase = config.responseCase ?? 'camel';
+  const avoidSnakeReq = config.avoidSnakeRequestConversion ?? [];
+  const avoidCamelRes = config.avoidCamelResponseConversion ?? [];
 
   return async function caseBridgeFetch(
     input: RequestInfo | URL,
@@ -64,7 +92,9 @@ export function createCaseBridgeFetch(config: FetchAdapterConfig = {}): typeof g
 
     // Outgoing: camelCase → snake_case (only for JSON bodies)
     let transformedInit = init;
+    const skipSnake = requestCase === 'camel' || shouldSkip(url, avoidSnakeReq);
     if (
+      !skipSnake &&
       init?.body != null &&
       typeof init.body === 'string' &&
       isJsonContentType(init.headers)
@@ -85,6 +115,11 @@ export function createCaseBridgeFetch(config: FetchAdapterConfig = {}): typeof g
     // Incoming: snake_case → camelCase (only for JSON responses)
     const contentType = response.headers.get('content-type') ?? '';
     if (!contentType.includes('application/json')) {
+      return response;
+    }
+
+    const skipCamel = responseCase === 'snake' || shouldSkip(url, avoidCamelRes);
+    if (skipCamel) {
       return response;
     }
 

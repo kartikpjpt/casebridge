@@ -38,9 +38,33 @@ interface AxiosResponse<T = unknown> {
 
 export interface AxiosAdapterConfig {
   /**
-   * URL substrings or RegExp patterns to skip transformation for.
+   * URL substrings or RegExp patterns to skip ALL transformation for.
    */
   skipUrls?: ReadonlyArray<string | RegExp>;
+  /**
+   * Default case for outgoing request payloads.
+   * - `'snake'` (default): converts camelCase → snake_case.
+   * - `'camel'`: sends payload as-is (no conversion).
+   */
+  requestCase?: 'snake' | 'camel';
+  /**
+   * Default case for incoming response payloads.
+   * - `'camel'` (default): converts snake_case → camelCase.
+   * - `'snake'`: leaves response payload as-is (no conversion).
+   */
+  responseCase?: 'snake' | 'camel';
+  /**
+   * URL substrings or RegExp patterns for endpoints that accept camelCase
+   * request bodies — snake_case conversion is skipped for these URLs,
+   * regardless of the global `requestCase` setting.
+   */
+  avoidSnakeRequestConversion?: ReadonlyArray<string | RegExp>;
+  /**
+   * URL substrings or RegExp patterns for endpoints that return non-camelCase
+   * responses — camelCase conversion is skipped for these URLs,
+   * regardless of the global `responseCase` setting.
+   */
+  avoidCamelResponseConversion?: ReadonlyArray<string | RegExp>;
 }
 
 function shouldSkip(url: string | undefined, patterns: ReadonlyArray<string | RegExp>): boolean {
@@ -80,18 +104,26 @@ export function createCaseBridgeAxiosInterceptors(
   config: AxiosAdapterConfig = {},
 ): CaseBridgeAxiosInterceptors {
   const skipPatterns = config.skipUrls ?? [];
+  const requestCase = config.requestCase ?? 'snake';
+  const responseCase = config.responseCase ?? 'camel';
+  const avoidSnakeReq = config.avoidSnakeRequestConversion ?? [];
+  const avoidCamelRes = config.avoidCamelResponseConversion ?? [];
 
   return {
     request: {
       onFulfilled(reqConfig: AxiosRequestConfig): AxiosRequestConfig {
         if (shouldSkip(reqConfig.url, skipPatterns)) return reqConfig;
         if (!isJsonBody(reqConfig.data)) return reqConfig;
+        const skipSnake = requestCase === 'camel' || shouldSkip(reqConfig.url, avoidSnakeReq);
+        if (skipSnake) return reqConfig;
         return { ...reqConfig, data: transformKeys(reqConfig.data, camelToSnake) };
       },
     },
     response: {
       onFulfilled(response: AxiosResponse): AxiosResponse {
         if (shouldSkip(response.config?.url, skipPatterns)) return response;
+        const skipCamel = responseCase === 'snake' || shouldSkip(response.config?.url, avoidCamelRes);
+        if (skipCamel) return response;
         return { ...response, data: transformKeys(response.data, snakeToCamel) };
       },
     },

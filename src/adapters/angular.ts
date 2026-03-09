@@ -30,10 +30,33 @@ import { snakeToCamel, camelToSnake } from '../core/converters';
 
 export interface CaseBridgeConfig {
   /**
-   * URL substrings or RegExp patterns for services that already return
-   * camelCase — their requests and responses are passed through untouched.
+   * URL substrings or RegExp patterns to skip ALL transformation for.
    */
   skipUrls?: ReadonlyArray<string | RegExp>;
+  /**
+   * Default case for outgoing request payloads.
+   * - `'snake'` (default): converts camelCase → snake_case.
+   * - `'camel'`: sends payload as-is (no conversion).
+   */
+  requestCase?: 'snake' | 'camel';
+  /**
+   * Default case for incoming response payloads.
+   * - `'camel'` (default): converts snake_case → camelCase.
+   * - `'snake'`: leaves response payload as-is (no conversion).
+   */
+  responseCase?: 'snake' | 'camel';
+  /**
+   * URL substrings or RegExp patterns for endpoints that accept camelCase
+   * request bodies — snake_case conversion is skipped for these URLs,
+   * regardless of the global `requestCase` setting.
+   */
+  avoidSnakeRequestConversion?: ReadonlyArray<string | RegExp>;
+  /**
+   * URL substrings or RegExp patterns for endpoints that return non-camelCase
+   * responses — camelCase conversion is skipped for these URLs,
+   * regardless of the global `responseCase` setting.
+   */
+  avoidCamelResponseConversion?: ReadonlyArray<string | RegExp>;
 }
 
 export const CASEBRIDGE_CONFIG = new InjectionToken<CaseBridgeConfig>(
@@ -78,13 +101,18 @@ export const caseTransformInterceptor: HttpInterceptorFn = (
 ): Observable<HttpEvent<unknown>> => {
   const config = inject(CASEBRIDGE_CONFIG, { optional: true });
   const skipPatterns = config?.skipUrls ?? [];
+  const requestCase = config?.requestCase ?? 'snake';
+  const responseCase = config?.responseCase ?? 'camel';
+  const avoidSnakeReq = config?.avoidSnakeRequestConversion ?? [];
+  const avoidCamelRes = config?.avoidCamelResponseConversion ?? [];
 
   if (shouldSkip(req.url, skipPatterns)) {
     return next(req);
   }
 
   // Outgoing: camelCase → snake_case
-  const outReq = isJsonBody(req.body)
+  const skipSnake = requestCase === 'camel' || shouldSkip(req.url, avoidSnakeReq);
+  const outReq = !skipSnake && isJsonBody(req.body)
     ? req.clone({ body: transformKeys(req.body, camelToSnake) })
     : req;
 
@@ -92,6 +120,8 @@ export const caseTransformInterceptor: HttpInterceptorFn = (
   return next(outReq).pipe(
     map((event) => {
       if (event instanceof HttpResponse && event.body != null) {
+        const skipCamel = responseCase === 'snake' || shouldSkip(req.url, avoidCamelRes);
+        if (skipCamel) return event;
         return event.clone({
           body: transformKeys(event.body, snakeToCamel),
         });
