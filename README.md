@@ -73,7 +73,15 @@ camelToSnake('MyKey');             // → 'my_key'            (PascalCase handle
 
 ## Adapters
 
-All adapters share the same `skipUrls` option — a list of URL substrings or RegExp patterns that bypass transformation entirely.
+All adapters accept the same configuration options:
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `requestCase` | `'snake' \| 'camel'` | `'snake'` | Global default for outgoing request payloads |
+| `responseCase` | `'snake' \| 'camel'` | `'camel'` | Global default for incoming response payloads |
+| `avoidSnakeRequestConversion` | `(string \| RegExp)[]` | `[]` | URLs that should receive camelCase request bodies (overrides `requestCase`) |
+| `avoidCamelResponseConversion` | `(string \| RegExp)[]` | `[]` | URLs whose responses should be left as-is (overrides `responseCase`) |
+| `skipUrls` | `(string \| RegExp)[]` | `[]` | URLs that bypass **all** transformation |
 
 ### Fetch API
 
@@ -94,6 +102,23 @@ const data = await fetch('/api/users', {
   // body sent as → { first_name: 'Jane', profile_id: 42 }
 }).then(r => r.json());
 // data keys are already camelCase
+```
+
+**Mixed API example** — most endpoints want snake_case, but some accept camelCase:
+
+```ts
+const fetch = createCaseBridgeFetch({
+  // default: request bodies are converted to snake_case
+  avoidSnakeRequestConversion: ['/v2/graphql', /\/camel-service\//],
+  // default: responses are converted to camelCase
+  avoidCamelResponseConversion: ['/legacy-api'],
+});
+```
+
+**All-camelCase API** — no conversion at all on requests:
+
+```ts
+const fetch = createCaseBridgeFetch({ requestCase: 'camel' });
 ```
 
 ### Axios
@@ -119,6 +144,17 @@ api.interceptors.request.use(request.onFulfilled);
 api.interceptors.response.use(response.onFulfilled);
 ```
 
+**Mixed API example** — some endpoints accept camelCase, others want snake_case:
+
+```ts
+const { request, response } = createCaseBridgeAxiosInterceptors({
+  // default: camelCase → snake_case for all requests
+  avoidSnakeRequestConversion: ['/v2/graphql', /\/camel-service\//],
+  // skip camelCase conversion for responses from legacy services
+  avoidCamelResponseConversion: ['/legacy-api'],
+});
+```
+
 ### Angular
 
 Add to your `app.config.ts`:
@@ -135,6 +171,15 @@ export const appConfig: ApplicationConfig = {
     }),
   ],
 };
+```
+
+**Mixed API example:**
+
+```ts
+provideCaseBridgeConfig({
+  avoidSnakeRequestConversion: ['/v2/graphql'],
+  avoidCamelResponseConversion: ['/legacy-api'],
+})
 ```
 
 ---
